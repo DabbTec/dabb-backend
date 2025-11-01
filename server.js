@@ -463,6 +463,9 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // --- Server Start ---
-app.listen(port, () => {
-  console.log(`✅ DabbTech Backend is live on port: ${port}`);
-});
+// app.listen(port, () => {
+//   console.log(`✅ DabbTech Backend is live on port: ${port}`);
+// });
+
+// Export the app for Vercel
+module.exports = app;
