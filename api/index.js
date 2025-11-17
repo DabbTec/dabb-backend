@@ -1,11 +1,12 @@
-// dabbtech-backend/server.js
-const express = require('express');
-const nodemailer = require('nodemailer');
-const cors = require('cors');
-const { GoogleGenAI } = require('@google/genai');
-const Handlebars = require('handlebars');
-const { Pool } = require('pg'); // Import the Postgres client
-require('dotenv').config(); // Ensure dotenv is initialized first
+import express from "express";
+import serverless from "serverless-http";
+import nodemailer from "nodemailer";
+import cors from "cors";
+import { GoogleGenAI } from "@google/genai";
+import Handlebars from "handlebars";
+import { Pool } from "pg";
+
+require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -14,19 +15,19 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// --- Database Connection ---
-// The pool will automatically use the DATABASE_URL from your .env or Vercel environment variables
+// ----------------------
+// DATABASE CONNECTION
+// ----------------------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // This is required for Vercel Postgres, Supabase, and other cloud providers
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false }
 });
 
-// --- AI Client Initialization ---
+// ----------------------
+// GOOGLE AI
+// ----------------------
 const aiClient = new GoogleGenAI({
-  apiKey: process.env.VITE_GEMINI_API_KEY,
+  apiKey: process.env.VITE_GEMINI_API_KEY
 });
 
 // --- Helper: create Nodemailer transporter ---
@@ -427,4 +428,4 @@ if (process.env.VERCEL_ENV !== 'production') {
 }
 
 // Export the app for Vercel
-module.exports = app;
+export default serverless(app);
