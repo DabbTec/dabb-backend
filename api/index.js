@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import Handlebars from "handlebars";
 import { Pool } from "pg";
 
-require('dotenv').config();
+import 'dotenv/config';
 
 const app = express();
 const port = process.env.PORT || 5000;
