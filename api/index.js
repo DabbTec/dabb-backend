@@ -174,7 +174,11 @@ app.get('/api/custom-templates', async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching custom templates:', err);
-    res.status(500).json({ error: 'Failed to fetch templates' });
+    // In production we return a generic message. For debugging (local or
+    // when SHOW_ERRORS=true) include the DB error message to help trace
+    // the root cause (e.g. missing table, auth error).
+    const show = process.env.SHOW_ERRORS === 'true' || process.env.NODE_ENV !== 'production' || process.env.VERCEL_ENV !== 'production';
+    res.status(500).json({ error: 'Failed to fetch templates', details: show ? err.message : undefined });
   }
 });
 
