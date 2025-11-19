@@ -23,6 +23,24 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// Diagnostic endpoint to verify DB connectivity on the deployed platform.
+// Call GET /api/db-check to run a simple query and return either the
+// database time (success) or the error (for debugging). Remove or
+// restrict this endpoint once the issue is resolved to avoid exposing
+// sensitive error details in production logs.
+app.get('/api/db-check', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.status(200).json({ ok: true, now: result.rows[0].now });
+  } catch (err) {
+    // Return structured error information useful for diagnosing Vercel
+    // deployment issues. Avoid leaking full stack traces in a public
+    // production environment.
+    console.error('DB Check failed:', err);
+    res.status(500).json({ ok: false, message: err.message, code: err.code || null });
+  }
+});
+
 // ----------------------
 // GOOGLE AI
 // ----------------------
