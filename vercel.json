@@ -2,11 +2,19 @@
   "version": 2,
   "builds": [
     {
+      "src": "api/ping.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/index.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/ping",
+      "dest": "/api/ping.js"
+    },
     {
       "src": "/api/(.*)",
       "dest": "/api/index.js"
