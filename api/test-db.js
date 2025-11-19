@@ -1,6 +1,8 @@
-// test-db.js
-require('dotenv').config(); // Load the .env file
-const { Pool } = require('pg');
+
+// test-db.js (ESM version)
+import dotenv from 'dotenv';
+dotenv.config(); // Load the .env file
+import { Pool } from 'pg';
 
 // Check if the DATABASE_URL is loaded
 if (!process.env.DATABASE_URL) {
