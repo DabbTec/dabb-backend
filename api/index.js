@@ -16,12 +16,20 @@ app.use(cors());
 app.use(express.json());
 
 // ----------------------
-// DATABASE CONNECTION
+// DATABASE CONNECTION (lazy)
 // ----------------------
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+// Initialize the Pool only when the first request needs it. This avoids
+// module-load crashes on serverless platforms when environment variables
+// or dependencies behave differently during deployment.
+function db() {
+  if (!global.__dbPool) {
+    global.__dbPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+  }
+  return global.__dbPool;
+}
 
 // Diagnostic endpoint to verify DB connectivity on the deployed platform.
 // Call GET /api/db-check to run a simple query and return either the
@@ -30,7 +38,7 @@ const pool = new Pool({
 // sensitive error details in production logs.
 app.get('/api/db-check', async (req, res) => {
   try {
-    const result = await pool.query('SELECT NOW()');
+    const result = await db().query('SELECT NOW()');
     res.status(200).json({ ok: true, now: result.rows[0].now });
   } catch (err) {
     // Return structured error information useful for diagnosing Vercel
@@ -44,9 +52,14 @@ app.get('/api/db-check', async (req, res) => {
 // ----------------------
 // GOOGLE AI
 // ----------------------
-const aiClient = new GoogleGenAI({
-  apiKey: process.env.VITE_GEMINI_API_KEY
-});
+// Lazy-initialize the AI client to avoid import-time failures.
+async function getAIClient() {
+  if (!global.__aiClient) {
+    const { GoogleGenAI } = await import('@google/genai');
+    global.__aiClient = new GoogleGenAI({ apiKey: process.env.VITE_GEMINI_API_KEY });
+  }
+  return global.__aiClient;
+}
 
 // --- Helper: create Nodemailer transporter ---
 function createTransporter() {
@@ -85,6 +98,7 @@ const delay = (ms) => new Promise((res) => setTimeout(res, ms));
  * @returns {Promise<string>} The AI response text.
  */
 async function callGemini(systemPrompt, userPrompt, maxRetries = 3, delayMs = 2000) {
+  const aiClient = await getAIClient();
   for (let i = 0; i < maxRetries; i++) {
     try {
       const response = await aiClient.models.generateContent({
@@ -170,7 +184,7 @@ app.post('/api/ai/improve-content', async (req, res) => {
 // GET all custom templates (metadata)
 app.get('/api/custom-templates', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, subject, createdAt FROM custom_email_templates ORDER BY createdAt DESC');
+    const result = await db().query('SELECT id, name, subject, createdAt FROM custom_email_templates ORDER BY createdAt DESC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching custom templates:', err);
@@ -186,7 +200,7 @@ app.get('/api/custom-templates', async (req, res) => {
 app.get('/api/custom-templates/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('SELECT * FROM custom_email_templates WHERE id = $1', [id]);
+    const result = await db().query('SELECT * FROM custom_email_templates WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
@@ -206,7 +220,7 @@ app.post('/api/custom-templates', async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
+    const result = await db().query(
       'INSERT INTO custom_email_templates (name, subject, content, createdAt) VALUES ($1, $2, $3, NOW()) RETURNING *',
       [name, subject, content]
     );
@@ -221,7 +235,7 @@ app.post('/api/custom-templates', async (req, res) => {
 app.delete('/api/custom-templates/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM custom_email_templates WHERE id = $1 RETURNING *', [id]);
+    const result = await db().query('DELETE FROM custom_email_templates WHERE id = $1 RETURNING *', [id]);
 
     if (result.rowCount === 0) {
       res.status(404).json({ error: 'Template not found' });
@@ -239,7 +253,7 @@ app.delete('/api/custom-templates/:id', async (req, res) => {
 // GET all prospects
 app.get('/api/prospects', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM prospects ORDER BY lastContact DESC');
+    const result = await db().query('SELECT * FROM prospects ORDER BY lastContact DESC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching prospects:', err);
@@ -250,7 +264,7 @@ app.get('/api/prospects', async (req, res) => {
 // GET all consultations
 app.get('/api/consultations', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM consultations ORDER BY date ASC');
+    const result = await db().query('SELECT * FROM consultations ORDER BY date ASC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching consultations:', err);
@@ -261,7 +275,7 @@ app.get('/api/consultations', async (req, res) => {
 // GET all email templates (old system)
 app.get('/api/templates', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM email_templates ORDER BY name ASC');
+    const result = await db().query('SELECT * FROM email_templates ORDER BY name ASC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching email templates:', err);
@@ -279,7 +293,7 @@ app.post('/api/prospects', async (req, res) => {
   }
 
   try {
-    const newProspect = await pool.query(
+    const newProspect = await db().query(
       'INSERT INTO prospects (name, email, company, service, source, status, priority, value, notes, lastContact) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()) RETURNING *',
       [name, email, company, service, source, status, priority, value, notes]
     );
@@ -299,7 +313,7 @@ app.post('/api/templates', async (req, res) => {
   }
 
   try {
-    const newTemplate = await pool.query(
+    const newTemplate = await db().query(
       'INSERT INTO email_templates (name, subject, category, content) VALUES ($1, $2, $3, $4) RETURNING *',
       [name, subject, category || 'uncategorized', content]
     );
@@ -353,7 +367,7 @@ app.post('/api/templates/send', async (req, res) => {
   if (templateId !== undefined && templateId !== null) {
     try {
       // Fetch the template from the database
-      const result = await pool.query('SELECT * FROM email_templates WHERE id = $1', [templateId]);
+      const result = await db().query('SELECT * FROM email_templates WHERE id = $1', [templateId]);
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Template not found' });
       }
@@ -420,6 +434,7 @@ app.post('/api/chat', async (req, res) => {
   const { userMessage, systemPrompt } = req.body;
 
   try {
+    const aiClient = await getAIClient();
     const stream = await aiClient.models.generateContentStream({
       model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nUser Message: ${userMessage}` }] }],
