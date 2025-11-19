@@ -31,6 +31,17 @@ function db() {
   return global.__dbPool;
 }
 
+// Helper: run a DB query with a timeout so serverless requests don't hang
+// indefinitely if the DB isn't reachable. Returns the query result or
+// throws an Error with code 'DB_TIMEOUT' on timeout.
+async function dbQuery(sql, params = [], timeoutMs = 8000) {
+  const q = db().query(sql, params);
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('DB query timed out')), timeoutMs)
+  );
+  return Promise.race([q, timeout]);
+}
+
 // Diagnostic endpoint to verify DB connectivity on the deployed platform.
 // Call GET /api/db-check to run a simple query and return either the
 // database time (success) or the error (for debugging). Remove or
@@ -38,7 +49,7 @@ function db() {
 // sensitive error details in production logs.
 app.get('/api/db-check', async (req, res) => {
   try {
-    const result = await db().query('SELECT NOW()');
+    const result = await dbQuery('SELECT NOW()');
     res.status(200).json({ ok: true, now: result.rows[0].now });
   } catch (err) {
     // Return structured error information useful for diagnosing Vercel
@@ -184,7 +195,7 @@ app.post('/api/ai/improve-content', async (req, res) => {
 // GET all custom templates (metadata)
 app.get('/api/custom-templates', async (req, res) => {
   try {
-    const result = await db().query('SELECT id, name, subject, createdAt FROM custom_email_templates ORDER BY createdAt DESC');
+    const result = await dbQuery('SELECT id, name, subject, createdAt FROM custom_email_templates ORDER BY createdAt DESC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching custom templates:', err);
@@ -200,7 +211,7 @@ app.get('/api/custom-templates', async (req, res) => {
 app.get('/api/custom-templates/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db().query('SELECT * FROM custom_email_templates WHERE id = $1', [id]);
+    const result = await dbQuery('SELECT * FROM custom_email_templates WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
@@ -220,7 +231,7 @@ app.post('/api/custom-templates', async (req, res) => {
   }
 
   try {
-    const result = await db().query(
+    const result = await dbQuery(
       'INSERT INTO custom_email_templates (name, subject, content, createdAt) VALUES ($1, $2, $3, NOW()) RETURNING *',
       [name, subject, content]
     );
@@ -235,7 +246,7 @@ app.post('/api/custom-templates', async (req, res) => {
 app.delete('/api/custom-templates/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db().query('DELETE FROM custom_email_templates WHERE id = $1 RETURNING *', [id]);
+    const result = await dbQuery('DELETE FROM custom_email_templates WHERE id = $1 RETURNING *', [id]);
 
     if (result.rowCount === 0) {
       res.status(404).json({ error: 'Template not found' });
@@ -253,7 +264,7 @@ app.delete('/api/custom-templates/:id', async (req, res) => {
 // GET all prospects
 app.get('/api/prospects', async (req, res) => {
   try {
-    const result = await db().query('SELECT * FROM prospects ORDER BY lastContact DESC');
+    const result = await dbQuery('SELECT * FROM prospects ORDER BY lastContact DESC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching prospects:', err);
@@ -264,7 +275,7 @@ app.get('/api/prospects', async (req, res) => {
 // GET all consultations
 app.get('/api/consultations', async (req, res) => {
   try {
-    const result = await db().query('SELECT * FROM consultations ORDER BY date ASC');
+    const result = await dbQuery('SELECT * FROM consultations ORDER BY date ASC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching consultations:', err);
@@ -275,7 +286,7 @@ app.get('/api/consultations', async (req, res) => {
 // GET all email templates (old system)
 app.get('/api/templates', async (req, res) => {
   try {
-    const result = await db().query('SELECT * FROM email_templates ORDER BY name ASC');
+    const result = await dbQuery('SELECT * FROM email_templates ORDER BY name ASC');
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching email templates:', err);
@@ -293,7 +304,7 @@ app.post('/api/prospects', async (req, res) => {
   }
 
   try {
-    const newProspect = await db().query(
+    const newProspect = await dbQuery(
       'INSERT INTO prospects (name, email, company, service, source, status, priority, value, notes, lastContact) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()) RETURNING *',
       [name, email, company, service, source, status, priority, value, notes]
     );
@@ -313,7 +324,7 @@ app.post('/api/templates', async (req, res) => {
   }
 
   try {
-    const newTemplate = await db().query(
+    const newTemplate = await dbQuery(
       'INSERT INTO email_templates (name, subject, category, content) VALUES ($1, $2, $3, $4) RETURNING *',
       [name, subject, category || 'uncategorized', content]
     );
@@ -367,7 +378,7 @@ app.post('/api/templates/send', async (req, res) => {
   if (templateId !== undefined && templateId !== null) {
     try {
       // Fetch the template from the database
-      const result = await db().query('SELECT * FROM email_templates WHERE id = $1', [templateId]);
+      const result = await dbQuery('SELECT * FROM email_templates WHERE id = $1', [templateId]);
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Template not found' });
       }
